@@ -62,6 +62,9 @@ data$`up beta` <- as.numeric(data$`up beta`)
 data$`down beta` <- as.numeric(data$`down beta`)
 data <- data %>% drop_na()
 
+#rank etfs by 3 yr perform
+data$`3yr perform rank` <- rank(data$`3 yr perform`, ties.method = "min")
+
 #if issuer is one of the big 5 issuers
 big_5_issuers <- c("Blackrock", "Vanguard", "State Street Global Advisors",
                  "Invesco", "Charles Schwab	")
@@ -90,7 +93,7 @@ data$`low fund closure risk` <-
 
 #create a new data frame without any characters in it
 data_reg <- subset(data, select = -c(`ticker`, `issuer`, `weighting methodology`,
-                                     `otc derivative use`, 
+                                     `otc derivative use`, `3 yr perform`,
                                      `securities lending active`,
                                      `fund closure risk`))
 
@@ -106,16 +109,16 @@ verify_set  <- data_reg[101:200, ]; rownames(verify_set) <- NULL
 test_set    <- data_reg[-c(1:200), ]; rownames(test_set) <- NULL
 
 # Build target and features matrix
-X_train   <- train_set %>% select(-c(`3 yr perform`))
-Y_train  <- train_set %>% select(`3 yr perform`)
+X_train   <- train_set %>% select(-c(`3yr perform rank`))
+Y_train  <- train_set %>% select(`3yr perform rank`)
 
 
-X_verify   <- verify_set %>% select(-c(`3 yr perform`))
-Y_verify  <- verify_set %>% select(`3 yr perform`)
+X_verify   <- verify_set %>% select(-c(`3yr perform rank`))
+Y_verify  <- verify_set %>% select(`3yr perform rank`)
 
 
-X_test   <- test_set %>% select(-c(`3 yr perform`))
-Y_test  <- test_set %>% select(`3 yr perform`)
+X_test   <- test_set %>% select(-c(`3yr perform rank`))
+Y_test  <- test_set %>% select(`3yr perform rank`)
 
 
 
@@ -141,8 +144,8 @@ X_te_sd <- bake(preproc, X_test)
 # Predict returns - 3yr perform 
 #################################################################
 # Lambda corresponds to alpha in Python code
-lambda_0  <- 0.001
-l1        <- 0.5
+lambda_0  <- 5.0
+l1        <- 0.7
 
 # OLS
 regr <- glmnet(as.matrix(X_tr_sd), as.matrix(Y_train), alpha=0, 
