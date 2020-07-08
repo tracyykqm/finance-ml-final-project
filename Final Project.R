@@ -63,7 +63,7 @@ data$`down beta` <- as.numeric(data$`down beta`)
 data <- data %>% drop_na()
 
 #rank etfs by 3 yr perform
-data$`3yr perform rank` <- rank(data$`3 yr perform`, ties.method = "min")
+data$`3yr perform rank` <- rank(-data$`3 yr perform`, ties.method = "min")
 
 #if issuer is one of the big 5 issuers
 big_5_issuers <- c("Blackrock", "Vanguard", "State Street Global Advisors",
