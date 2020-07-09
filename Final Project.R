@@ -7,11 +7,8 @@ library(ggplot2)
 library(caret)
 library(glmnet)
 library(readr)
-#I used a new library for standardizing only certain columns
-if (!("recipes" %in% installed.packages())) {
-  install.packages("recipes")
-}
-library(recipes)
+#library(recipes)
+library(quanteda)
 
 
 #################################################################
@@ -37,7 +34,7 @@ mse_fun <- function(outcome, predictor) {
 full_data <- read_csv(file.choose())
 
 #choose columns that we want to include
-data <- subset(full_data, select = c(ticker, issuer,
+data <- subset(full_data, select = c(ticker, issuer,`factset analytics insights`,
                             `expense ratio`, `AUM(Millions $)`, 
                             `p/e`, `p/b`, `dist yld`,
                              `num holdings`, `weighting methodology`,
@@ -61,6 +58,18 @@ data$Beta <- as.numeric(data$`Beta`)
 data$`up beta` <- as.numeric(data$`up beta`)
 data$`down beta` <- as.numeric(data$`down beta`)
 data <- data %>% drop_na()
+
+# 
+# adding transformation
+data$`p/e squared` <- data$`p/e`^2
+data$`p/b squared` <- data$`p/b`^2
+data$`p/e * Beta` <- data$`p/e`*data$`p/b`
+data$`p/b * Beta` <- data$`p/b`*data$Beta
+data$`avg daily share volume squared` <- data$`avg daily share volume`^2
+data$`num holdings squared` <- data$`num holdings`^2
+data$`avg spread % squared` <- data$`avg spread %`^2
+
+
 
 #rank etfs by 3 yr perform
 data$`3yr perform rank` <- rank(-data$`3 yr perform`, ties.method = "min")
@@ -91,12 +100,47 @@ data$`low fund closure risk` <-
   ifelse (data$`fund closure risk` == "Low", 1, 0)
 
 
+#################################################################
+# text data processing
+#################################################################
+
+# data$`text length` <- nchar(data$`factset analytics insights`)
+# #summary(data$`text length`)
+# 
+# # tokenize insights
+# text_token <- tokens(data$`factset analytics insights`, what = "word",
+#                      remove_numbers = TRUE, remove_punct = TRUE,
+#                      remove_symbols = TRUE, split_hyphens = TRUE)
+# 
+# # lower case the tokens
+# text_token <- tokens_tolower(text_token)
+# 
+# # remove stopwords
+# text_token <- tokens_select(text_token, stopwords(),
+#                             selection = "remove")
+# # perform stemming
+# text_token <- tokens_wordstem(text_token, language = "english")
+# 
+# # create bag-of-word model
+# text_token_dfm <- dfm(text_token, tolower = FALSE)
+# 
+# data_tokens_df <- cbind(data, convert(text_token_dfm, to = "data.frame"))
+# 
+
 #create a new data frame without any characters in it
-data_reg <- subset(data, select = -c(`ticker`, `issuer`, `weighting methodology`,
+# data_reg <- subset(data_tokens_df, select = -c(`ticker`, `issuer`, 
+#                                                `factset analytics insights`,
+#                                                `weighting methodology`,
+#                                      `otc derivative use`, `3 yr perform`,
+#                                      `securities lending active`,
+#                                      `fund closure risk`, `doc_id`))
+                   
+data_reg <- subset(data, select = -c(`ticker`, `issuer`,
+                                               `factset analytics insights`,
+                                               `weighting methodology`,
                                      `otc derivative use`, `3 yr perform`,
                                      `securities lending active`,
                                      `fund closure risk`))
-
 
 
 #################################################################
@@ -104,9 +148,9 @@ data_reg <- subset(data, select = -c(`ticker`, `issuer`, `weighting methodology`
 #################################################################
 
 # Get training and test sets
-train_set   <- data_reg[1:100, ]; rownames(train_set) <- NULL
-verify_set  <- data_reg[101:200, ]; rownames(verify_set) <- NULL
-test_set    <- data_reg[-c(1:200), ]; rownames(test_set) <- NULL
+train_set   <- data_reg[1:400, ]; rownames(train_set) <- NULL
+verify_set  <- data_reg[401:620, ]; rownames(verify_set) <- NULL
+test_set    <- data_reg[-c(1:620), ]; rownames(test_set) <- NULL
 
 # Build target and features matrix
 X_train   <- train_set %>% select(-c(`3yr perform rank`))
@@ -127,16 +171,12 @@ Y_test  <- test_set %>% select(`3yr perform rank`)
 #################################################################
 
 # stadardize columns without binary variables
-preproc <- recipe(~ ., data = X_train) %>%
-  step_center(-`big 5 issuer`, -`market cap weighting method`,
-              -`derivative use`, -`lending`, -`low fund closure risk`) %>%
-  step_scale(-`big 5 issuer`, -`market cap weighting method`,
-             -`derivative use`, -`lending`, -`low fund closure risk`)
-preproc <- prep(preproc, training = X_train)
+scaler <- preProcess(X_train[-c(22:26)], method=c("center", "scale"))
+scaler$std <- scaler$std*sqrt((dim(X_train)[1]-1)/dim(X_train)[1])
 
-X_tr_sd <- bake(preproc, X_train)
-X_ve_sd <- bake(preproc, X_verify)
-X_te_sd <- bake(preproc, X_test)
+X_tr_sd <- predict(scaler, X_train)
+X_ve_sd <- predict(scaler, X_verify)
+X_te_sd <- predict(scaler, X_test)
 
 
 
@@ -144,7 +184,7 @@ X_te_sd <- bake(preproc, X_test)
 # Predict returns - 3yr perform 
 #################################################################
 # Lambda corresponds to alpha in Python code
-lambda_0  <- 5.0
+lambda_0  <- 1.0
 l1        <- 0.7
 
 # OLS
@@ -177,6 +217,7 @@ coeffs <- data.frame(Variable=rownames(coef(regr)), OLS=as.numeric(coef(regr)),
 oos_fun <- function(outcome, predictor, name) {
   print(name)
   print(sprintf("Mean squared error: %.2f", mse_fun(outcome, predictor)))
+  print(sprintf("RMSE: %.2f", sqrt(mse_fun(outcome, predictor))))
   print(sprintf("Coefficient of determination: %.2f", 
                 r2_score_fun(outcome, predictor)))
 }
